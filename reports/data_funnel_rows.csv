@@ -1,0 +1,9 @@
+stage,rows,removed,default_rate,why,detail
+Raw accepted-loans file,2260701,,,All loans LendingClub funded 2007-2018 (Kaggle accepted_2007_to_2018Q4.csv).,
+Remove footer rows,2260668,33.0,,"Summary lines such as 'Total amount funded in policy code 1', not loans.",
+Keep resolved loans,1348059,912609.0,0.19978354063138187,Only Fully Paid (target 0) and Charged Off (target 1) have a known outcome. Loans still running or late at the 2018 Q4 snapshot have no final label; status 'Default' is not yet charged off.,"Current: 878,317; Late (31-120 days): 21,467; In Grace Period: 8,436; Late (16-30 days): 4,349; Default: 40"
+Issued from 2013-01,1252157,95902.0,0.20304562447041385,"Most credit-bureau features (num_*, mo_sin_*, bc_util, mort_acc ...) are only filled in from 2013; older loans would be mostly missing values.",
+Fully matured vintages only,580400,671757.0,0.14726223294279808,"Loans issued later had mostly not finished by the snapshot; the ones that had are biased towards early defaults and early pay-offs, so their default rate is not representative.","36-month issued from 2016-01: 402,159; 60-month issued from 2014-01: 269,598"
+Train,334531,,0.1473297557895945,"80% of development loans (issued before 2015-07-01), stratified random; used for cross-validation, tuning and fitting.",
+Test,83633,,0.1473297557895945,"20% of development loans: same period, never trained on.",
+OOT,162236,,0.14708819250967725,"Issued from 2015-07-01: the most recent matured months, held out to test on future loans.",

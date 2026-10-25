@@ -1,0 +1,90 @@
+paths:
+  raw_data: data/raw
+  reports: reports
+
+data:
+  raw_file: LC_loans_granting_model_dataset.csv
+  original_file: accepted_2007_to_2018Q4.csv
+  data_dictionary: data_dictionary.csv
+  target: Default
+  # Only vintages that had fully resolved by the 2018 Q4 snapshot (see notebooks/02-eda-original-accepted.ipynb)
+  population:
+    start: 2013-01-01
+    last_issue_month_by_term: {36: 2015-12-01, 60: 2013-12-01}
+
+split:
+  # Out-of-time sample: the most recent fully resolved issue months (36-month loans only)
+  oot_start: 2015-07-01
+  # 0 = no separate test set: all development loans go into k-fold CV, and in-time performance is
+  # measured on the out-of-fold predictions
+  test_size: 0.0
+  n_splits: 5
+  random_state: 42
+
+mlflow:
+  tracking_uri: sqlite:///mlflow.db
+  artifact_root: mlruns
+  experiment_name: loan-default-xgboost
+
+model:
+  name: xgboost
+  early_stopping_rounds: 100
+  params:
+    n_estimators: 3000
+    learning_rate: 0.05
+    max_depth: 5
+    min_child_weight: 20
+    subsample: 0.8
+    colsample_bytree: 0.7
+    reg_lambda: 5.0
+    tree_method: hist
+    eval_metric: auc
+    n_jobs: -1
+
+tuning:
+  n_trials: 30
+  timeout_seconds: 4800
+  # best = highest CV AUC; most_regularized = most conservative trial within 1 CV std of the best
+  selection: most_regularized
+  n_splits: 3  # fewer folds than final training, to keep trials fast
+  # Held constant in every trial
+  fixed_params: {}
+  # Searched: [low, high], sampled on a log scale when log: true
+  search_space:
+    colsample_bytree: {type: float, low: 0.70, high: 0.95}
+    learning_rate: {type: float, low: 0.02, high: 0.2, log: true}
+    max_depth: {type: int, low: 3, high: 8}
+    min_child_weight: {type: float, low: 1, high: 200, log: true}
+    subsample: {type: float, low: 0.6, high: 1.0}
+    reg_lambda: {type: float, low: 0.01, high: 50, log: true}
+    reg_alpha: {type: float, low: 0.001, high: 10, log: true}
+    gamma: {type: float, low: 0.0, high: 5.0}
+    max_cat_threshold: {type: int, low: 4, high: 64}  # limits partitioning of addr_state / purpose
+
+features:
+  default_set: full_no_state
+  sets:
+    # Equivalent of the 15-column filtered dataset, for comparison
+    baseline:
+      numeric: [loan_amnt, annual_inc, dti, fico, emp_length_years]
+      categorical: [purpose, home_ownership, addr_state]
+    full:
+      numeric: [
+        loan_amnt, term_months, annual_inc, dti, fico, emp_length_years, emp_title_missing,
+        credit_history_months, delinq_2yrs, inq_last_6mths, mths_since_last_delinq,
+        mths_since_last_record, open_acc, pub_rec, revol_bal, revol_util, total_acc,
+        collections_12_mths_ex_med, mths_since_last_major_derog, acc_now_delinq, tot_coll_amt,
+        tot_cur_bal, total_rev_hi_lim, acc_open_past_24mths, avg_cur_bal, bc_open_to_buy, bc_util,
+        chargeoff_within_12_mths, delinq_amnt, mo_sin_old_il_acct, mo_sin_old_rev_tl_op,
+        mo_sin_rcnt_rev_tl_op, mo_sin_rcnt_tl, mort_acc, mths_since_recent_bc,
+        mths_since_recent_bc_dlq, mths_since_recent_inq, mths_since_recent_revol_delinq,
+        num_accts_ever_120_pd, num_actv_bc_tl, num_actv_rev_tl, num_bc_sats, num_bc_tl, num_il_tl,
+        num_op_rev_tl, num_rev_accts, num_tl_120dpd_2m, num_tl_30dpd, num_tl_90g_dpd_24m,
+        num_tl_op_past_12m, pct_tl_nvr_dlq, percent_bc_gt_75, pub_rec_bankruptcies, tax_liens,
+        total_bal_ex_mort, total_bc_limit, total_il_high_credit_limit,
+      ]
+      categorical: [home_ownership, verification_status, purpose, addr_state]
+    # Same as full, without the borrower's state
+    full_no_state:
+      base: full
+      exclude: [addr_state]

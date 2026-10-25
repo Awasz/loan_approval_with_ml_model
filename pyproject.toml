@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "loan-approval"
+version = "0.1.0"
+description = "Probability-of-default model for LendingClub loan applications (XGBoost + MLflow)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas",
+    "numpy",
+    "scikit-learn",
+    "pyyaml",
+    "polars",
+    "pyarrow",
+    "xgboost-cpu",  # CPU-only build (no CUDA libraries)
+    "mlflow",
+    "optuna",
+    "matplotlib",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov", "ruff", "jupyter", "seaborn", "openpyxl"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]

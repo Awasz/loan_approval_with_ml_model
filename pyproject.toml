@@ -22,7 +22,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "ruff", "jupyter", "seaborn", "openpyxl"]
+api = ["fastapi", "uvicorn", "pydantic>=2"]
+dev = ["pytest", "pytest-cov", "ruff", "httpx", "jupyter", "seaborn", "openpyxl"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

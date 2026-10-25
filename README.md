@@ -35,7 +35,7 @@ Python 3.10+ (developed on 3.12).
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-make dev          # package in editable mode + pytest, ruff, jupyter, seaborn, openpyxl
+make dev          # package in editable mode + API (fastapi, uvicorn) + dev tools
 ```
 
 ## Usage
@@ -51,6 +51,9 @@ All commands run from the repository root. `CONFIG=...` switches the config (def
 | `make train-regularized` | Final run with the most regularized trial (within 1 CV std of the best) of the latest tuning run |
 | `make report` | HTML model report (importance, SHAP, PDP, calibration, KS threshold) into `reports/` and the run |
 | `make register` | Register `xgb_full_regularized` in the MLflow Model Registry with alias `champion` |
+| `make export-model` | Export the champion to `models/champion/` (`model.ubj` + `model_card.json`) for the API |
+| `make serve` | Run the API at <http://localhost:8000> (interactive docs at `/docs`) |
+| `make docker-build` / `make docker-run` | Build and run the API image |
 | `make funnel` | Row and column funnel from raw file to modelling data, into `reports/` |
 | `make data-dictionary` | Rebuild `data_dictionary.csv` from `LCDataDictionary.xlsx` |
 | `make mlflow-ui` | Browse runs at <http://localhost:5000> |
@@ -75,7 +78,53 @@ python scripts/export_run_data.py --run-name xgb_full_regularized --split oot
 # -> data/processed/xgb_full_regularized_oot.parquet
 ```
 
-### Scoring with the selected model
+## API
+
+A FastAPI service scores loan applications with the exported model bundle. It needs neither MLflow
+nor the training data at runtime.
+
+```bash
+make export-model     # once, after make register: writes models/champion/
+make serve            # or: make docker-build && make docker-run
+```
+
+| Endpoint | |
+|---|---|
+| `POST /predict` | One application → probability of default, approve / decline, warnings |
+| `POST /predict/batch` | `{"applications": [...]}`, up to 1,000 per call |
+| `GET /model` | Model card: run, features, category levels, threshold, test / OOT metrics |
+| `GET /health` | Liveness and the loaded model |
+| `GET /docs` | Interactive OpenAPI docs, with a full example request |
+
+```bash
+curl -s -X POST localhost:8000/predict -H 'Content-Type: application/json' -d @request.json
+```
+```json
+{"probability_of_default": 0.0782, "decision": "approve", "threshold": 0.1565,
+ "warnings": [], "model": "xgb_full_regularized (c4193833)"}
+```
+
+**Input.** Fields use LendingClub's column names (descriptions in `data_dictionary.csv`). A few use
+friendlier formats:
+
+- `term` is `36` or `60`;
+- `emp_length` is years from 0 to 10, where 10 means 10+;
+- `earliest_cr_line` and `issue_date` are ISO dates.
+
+**Required vs optional.** A field is optional only if it was sometimes missing in training, where
+missing means something: the event never happened (the `mths_since_*` fields), the borrower has no
+such account, or employment details weren't given. The other 36 credit-bureau fields were always
+present in training and are required. Leaving them out would make the model read every applicant as
+unusual: in a test on 20,000 OOT loans, omitting them raised the mean PD from 14% to 32%.
+
+**Decisions.** `decline` when the PD is at least 0.1565, the KS-optimal cut-off from training. A
+category the model never saw (e.g. `addr_state: "PR"`) is scored as missing and reported in
+`warnings`.
+
+**Verified:** the API reproduces the training pipeline's scores exactly, with 0.0 difference on all
+162,236 OOT loans through the inference pipeline and on 5,000 of them through HTTP.
+
+### Scoring in Python
 
 ```python
 import mlflow
@@ -91,8 +140,14 @@ pd_scores = model.predict_proba(oot.X)[:, 1]   # probability of default
 declined = pd_scores >= 0.1565                 # KS cut-off chosen on train
 ```
 
-The model expects the 61 features produced by `prepare_data` / `build_features`, with categories
-matching training. There is no inference API yet (see ARCHITECTURE.md, section 10).
+To score raw applications without MLflow, use the bundle and the inference pipeline:
+
+```python
+from loan_approval.models.bundle import load_bundle
+from loan_approval.pipelines.inference_pipeline import predict
+
+scores = predict(raw_applications_df, load_bundle("models/champion"))  # raw LendingClub columns
+```
 
 ## Project structure
 
@@ -103,15 +158,18 @@ matching training. There is no inference API yet (see ARCHITECTURE.md, section 1
 │   └── config_kfold_no_state.yaml  # experiment: k-fold only, without addr_state
 ├── data/                  # git-ignored contents: raw/, external/, processed/
 ├── data_dictionary.csv    # all 151 raw columns: description, group, usable or leakage
+├── docker/Dockerfile      # API image
+├── models/champion/       # exported model bundle served by the API
 ├── notebooks/             # 01: 15-column file EDA; 02: original file, leakage, snapshot bias
 ├── reports/               # model report and data funnel (HTML + CSV)
 ├── scripts/               # CLI entry points (one per Makefile target)
 ├── src/loan_approval/
 │   ├── data/              # load, clean, split, versioning, run-data rebuild, funnel
 │   ├── features/          # feature sets and derived features
-│   ├── models/            # XGBoost CV training, Optuna tuning
+│   ├── api/               # FastAPI app and request / response schemas
+│   ├── models/            # XGBoost CV training, Optuna tuning, model bundle export / load
 │   ├── evaluation/        # metrics, importance, SHAP / PDP / calibration
-│   ├── pipelines/         # training + tuning pipeline, report pipeline
+│   ├── pipelines/         # training + tuning, inference, report pipelines
 │   ├── utils/             # logging
 │   └── config.py
 └── tests/unit/
@@ -139,6 +197,7 @@ Set `LOG_LEVEL` (default `INFO`) to change log verbosity.
 - Data: [Kaggle LendingClub accepted loans](https://www.kaggle.com/datasets/wordsforthewise/lending-club),
   [Zenodo granting-model dataset](https://zenodo.org/records/11295916),
   [LendingClub data dictionary](https://resources.lendingclub.com/LCDataDictionary.xlsx)
-- Tools: [XGBoost categorical support](https://xgboost.readthedocs.io/en/stable/tutorials/categorical.html),
+- Tools: [FastAPI](https://fastapi.tiangolo.com/),
+  [XGBoost categorical support](https://xgboost.readthedocs.io/en/stable/tutorials/categorical.html),
   [MLflow Model Registry](https://mlflow.org/docs/latest/ml/model-registry/),
   [Optuna](https://optuna.readthedocs.io/)

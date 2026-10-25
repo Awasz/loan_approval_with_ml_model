@@ -196,7 +196,38 @@ By total gain: `addr_state` 15.5%, `fico` 8.0%, `annual_inc` 4.9%, `term_months`
 The HTML report ([`reports/model_report_xgb_full_regularized.html`](reports/model_report_xgb_full_regularized.html))
 adds SHAP values, partial dependence plots and confusion matrices.
 
-## 9. Code layout
+## 9. Serving
+
+```mermaid
+flowchart LR
+    reg[(MLflow registry<br/>champion)] -->|scripts/export_model.py| bundle[models/champion/<br/>model.ubj + model_card.json]
+    req[POST /predict<br/>application JSON] --> schema[api/schemas.py<br/>validate, raw format]
+    schema --> inf[pipelines/inference_pipeline.py<br/>clean, build_features, categories]
+    bundle --> inf
+    inf --> resp[PD, approve / decline, warnings]
+```
+
+- **Bundle instead of MLflow at runtime.** [`models/bundle.py`](src/loan_approval/models/bundle.py)
+  exports the registered model with a model card holding:
+  - the run and data lineage;
+  - the feature order and the category levels (read from the model itself);
+  - the KS threshold, and test and OOT metrics.
+
+  The API loads only this folder, so it needs neither the tracking store nor the 1.6 GB training
+  file.
+- **Same code path as training.** [`inference_pipeline.py`](src/loan_approval/pipelines/inference_pipeline.py)
+  applies `replace_suspicious_values` and `build_features` unchanged, then fixes categories to the
+  model's levels. Unseen levels are scored as missing and reported as warnings. On all 162,236 OOT
+  loans it reproduces the training pipeline's scores exactly.
+- **Required fields follow the training data.** XGBoost treats NaN as information. Every bureau field
+  except the `mths_since_*` / no-such-account ones was always present in 2013–2015, so a missing value
+  sends the applicant down tree branches built for rare cases. Leaving the 36 such fields out raised
+  the mean PD on OOT loans from 14% to 32%. The schema therefore makes them required and leaves
+  optional only the 17 fields that were genuinely missing in training.
+- **Decision rule.** Decline when PD ≥ 0.1565 (the KS-optimal threshold from section 8). The response
+  carries the threshold so callers can apply their own.
+
+## 10. Code layout
 
 ```mermaid
 flowchart LR
@@ -217,23 +248,26 @@ flowchart LR
 |---|---|
 | `src/loan_approval/data/` | Load the population, clean values, split, fingerprint data, rebuild a run's data, row/column funnel |
 | `src/loan_approval/features/` | Feature sets from config, derived features, categorical alignment |
-| `src/loan_approval/models/` | XGBoost CV + final fit; Optuna search and trial selection |
+| `src/loan_approval/models/` | XGBoost CV + final fit; Optuna search and trial selection; serving bundle export / load |
 | `src/loan_approval/evaluation/` | Metrics (AUC, KS, PSI, threshold confusion), gain importance, SHAP, PDP, calibration |
-| `src/loan_approval/pipelines/` | End-to-end training and tuning with MLflow logging; HTML reports |
+| `src/loan_approval/pipelines/` | End-to-end training and tuning with MLflow logging; inference; HTML reports |
+| `src/loan_approval/api/` | FastAPI app and request / response schemas |
+| `models/champion/`, `docker/` | Exported bundle the API serves; API image |
 | `scripts/` | Thin CLI entry points, one per task |
 | `configs/` | Everything tunable: population, split, model params, search space, feature sets |
 | `notebooks/` | The EDA that motivated the design (01: 15-column file; 02: original file, leakage, snapshot bias) |
 | `reports/` | Generated HTML reports and funnel tables |
-| `tests/unit/` | Cleaning, features, metrics/split, importance, tuning selection, versioning |
+| `tests/unit/` | Cleaning, features, metrics/split, importance, tuning selection, versioning, API |
 
 Scripts contain no logic; they parse arguments and call a pipeline function. All paths resolve from
 the project root, so commands work from any directory.
 
-## 10. Limitations and next steps
+## 11. Limitations and next steps
 
-- **No inference service.** New applications must go through the same load → clean →
-  `build_features` steps, with categories aligned to training. A `predict` module and an API are the
-  next step.
+- **The API has no authentication, rate limiting or request logging.** Put it behind a gateway
+  before exposing it. Monitoring score drift (PSI against the OOT scores) is not built yet.
+- **The image is 1.1 GB**, mostly MLflow, which the API itself doesn't need. Moving the MLflow
+  imports out of the serving path would shrink it.
 - **The PD needs recalibration** on recent vintages before it is used as a probability (section 8).
 - **The no-state experiment is unfinished.** Rerunning `configs/config_kfold_no_state.yaml` to
   completion gives a confirmed OOT score for a model without `addr_state`, which is simpler and less

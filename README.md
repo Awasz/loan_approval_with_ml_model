@@ -28,6 +28,29 @@ The selected model was trained on the file with SHA-256
 your copy with `sha256sum data/raw/accepted_2007_to_2018Q4.csv`. Rebuilding a run's data refuses
 to proceed if the file differs.
 
+### Data sources and licenses
+
+This repository contains no loan-level data, only code, aggregate results and a model trained on the
+data. Download the data from its sources under their own terms:
+
+- **LendingClub accepted loans 2007–2018Q4**, published on Kaggle by Nathan George and labelled
+  [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) by the uploader. The data was
+  originally released by LendingClub, whose own terms may also apply.
+- **Lending Club loan dataset for granting models** by M. J. Ariza-Garzón, M. Sanz-Guerrero and
+  J. Arroyo Gallardo, [Zenodo record 11295916](https://zenodo.org/records/11295916), licensed under
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). It is used here only for exploration
+  (notebook 01) and was not modified or redistributed.
+- **Column descriptions** in `data_dictionary.csv` are taken from LendingClub's
+  [`LCDataDictionary.xlsx`](https://resources.lendingclub.com/LCDataDictionary.xlsx), © LendingClub.
+
+This is an independent project, not affiliated with or endorsed by LendingClub.
+
+> **Not for credit decisions.** This model is an educational and portfolio project. Using a credit
+> model for real lending decisions is regulated (in the US, for example, ECOA / Regulation B and FCRA,
+> including adverse-action notices and fair-lending and disparate-impact testing). This model has not
+> been validated for that; in particular, it uses the borrower's state (`addr_state`), which would
+> need a fair-lending review.
+
 ## Setup
 
 Python 3.10+ (developed on 3.12).
@@ -191,6 +214,11 @@ Set `LOG_LEVEL` (default `INFO`) to change log verbosity.
   and open it in a browser; GitHub shows HTML as source.
 - [Data funnel](reports/data_funnel.html), with tables in
   [rows](reports/data_funnel_rows.csv) and [columns](reports/data_funnel_columns.csv).
+
+## License
+
+The code is released under the [MIT License](LICENSE). The data is not part of this repository and
+keeps its own licenses (see [Data sources and licenses](#data-sources-and-licenses)).
 
 ## Links
 

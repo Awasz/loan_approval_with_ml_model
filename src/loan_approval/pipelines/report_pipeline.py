@@ -138,9 +138,10 @@ def build_report(config_path: str | Path = DEFAULT_CONFIG, run_id: str | None = 
     shap_scores = pd.Series(model.predict_proba(X_shap)[:, 1], index=X_shap.index)
     defaulted = shap_scores[y_oot.loc[X_shap.index] == 1]
     example = (defaulted - shap_scores.quantile(0.9)).abs().idxmin()
+    # The loan id stays in the local MLflow run only; the HTML report is shared, so it doesn't name the loan
     example_id = data.splits.oot.loc[example, "id"]
     waterfall = plot_shap_waterfall(shap.loc[example], X_shap.loc[example], base_value,
-                                    title=f"OOT loan id {example_id} (actual: defaulted)")
+                                    title="One OOT loan (actual: defaulted)")
 
     # 3. Partial dependence for numeric features above the threshold
     pdp_features = [f for f in gain_top["feature"] if f in numeric]
@@ -255,7 +256,7 @@ for <code>dti</code> mean high DTI raises predicted default risk.</p>
 {_img(plot_shap_beeswarm(shap, X_shap, beeswarm_features))}
 {_table(shap_imp.head(20), pct_cols=('shap_pct',), digits=4)}
 <h3>One OOT loan explained (SHAP waterfall)</h3>
-<p>Loan id <b>{example_id}</b>: it defaulted, and its predicted PD
+<p>This loan defaulted, and its predicted PD
 (<b>{100 * shap_scores[example]:.1f}%</b>) sits at the 90th percentile of OOT scores, a typical high-risk
 loan the model flags. The chart starts from the model's average (base value) and adds each feature's
 contribution in log-odds: red bars push towards default, blue bars away. The 12 largest contributions are
